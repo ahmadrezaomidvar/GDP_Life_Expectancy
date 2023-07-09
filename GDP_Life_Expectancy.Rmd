@@ -1,0 +1,488 @@
+---
+title: "GDP and Life Expectancy Analysis"
+author: "Reza Omidvar"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# GDP and Life Expectancy Analysis
+
+## 1. Load the Packages
+```{r message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+library(factoextra)
+library(ICSNP)
+library(MASS)
+library(glmnet)
+```
+
+## 2. Load the Data
+```{r}
+gap.raw <- read.csv('./gap.csv')
+gap <- gap.raw
+```
+
+## 3. Data Preprocessing
+### 3.1. GDP
+```{r}
+gap[,3:14]<- log(gap.raw[,3:14])
+gdp <- (gap[,3:14])
+years <- seq(1952, 2007,5)
+colnames(gdp) <- years
+rownames(gdp) <- gap[,2]
+```
+**Note:** log of the gap is called gdp and it is used for the analysis.
+
+### 3.2. Life Expectancy
+```{r}
+```{r}
+lifeExp <- gap[,15:26]
+colnames(lifeExp) <- years
+rownames(lifeExp) <- gap[,2]
+```
+
+## 4. Exploratory Data Analysis
+### 4.1. GDP
+```{r}
+plot(years, colMeans(exp(gdp)), type='l', xlab='Year', ylab='Average GDP', main='Average GDP over time')
+```
+```{r}
+gdp.cont <- aggregate(gdp, by=list(gap$continent), FUN=mean)
+plot(years, gdp.cont[1,2:13], type='l', xlab='Year', ylab='Average GDP (log)', main='GDP (log) by continent over time', col=1, ylim=c(6.5, 10.5))
+for(i in 2:6){
+  lines(years, gdp.cont[i,2:13], col=i)
+}
+legend('bottomright', legend=gdp.cont[,1], col=1:6, lty=1)
+```
+
+### 4.2. Life Expectancy
+```{r}
+plot(years, colMeans(lifeExp), type='l', xlab='Year', ylab='Average Life Expectancy', main='Average Life Expectancy over time')
+```
+```{r}
+lifeExp.cont <- aggregate(lifeExp, by=list(gap$continent), FUN=mean)
+
+plot(years, lifeExp.cont[1,2:13], type='l', xlab='Year', ylab='Average Life Expectancy', main='Life Expectancy by continent over time', col=1, ylim=c(30, 80))
+for(i in 2:6){
+  lines(years, lifeExp.cont[i,2:13], col=i)
+}
+legend('bottomright', legend=lifeExp.cont[,1], col=1:6, lty=1)
+```
+
+## 5. Analysis
+### 5.1. Principal Component Analysis
+#### 5.1.1. GDP
+```{r}
+gdp.pca.S <- prcomp(gdp, scale=FALSE)
+gdp.pca.S.scores <- gdp.pca.S$x
+summary(gdp.pca.S)
+```
+```{r}
+cum.variance.S <- summary(gdp.pca.S)$importance[3,]
+variance.S <- summary(gdp.pca.S)$importance[2,]
+plot(cum.variance.S, type='l', xlab='Number of Principal Components', ylab='Cumulative Variance', main='Cumulative Variance of GDP (log)')
+```
+
+**Plotting PCA scores**
+
+```{r}
+plot(gdp.pca.S, main='PCA Scores of GDP (log)')
+```
+
+According to the plot above, the first three principal components explain 99.3% of the variance in the data. Therefore, we will use the first three principal components for the analysis.
+
+According to the negative and positive values of the principal components, it would be hard to interpret the results directly. Therefore we are going to plot them against each other to see if there is any pattern.
+
+```{r}
+gdp.pca.S.scores <- data.frame(gdp.pca.S.scores)
+gdp.pca.S.scores$country <- rownames(gdp.pca.S.scores)
+gdp.pca.S.scores$continent <- gap$continent
+```    
+
+```{r}
+plt <- ggplot(gdp.pca.S.scores, aes(PC1, PC2, colour=continent)) 
+plt <- plt + geom_point()
+plt <- plt + geom_text(aes(label=country), size=2) 
+plt <- plt + ggtitle('GDP PCA', subtitle='PC1 vs PC2')
+plt <- plt + theme(
+  plot.title = element_text(hjust = 0.5),
+  plot.subtitle = element_text(hjust = 0.5)
+)
+plt <- plt + xlab(paste('PC1 (', round(variance.S[1]*100, 2), '%)', sep=''))
+plt <- plt + ylab(paste('PC2 (', round(variance.S[2]*100, 2), '%)', sep=''))
+print(plt)
+```
+
+```{r}
+plt <- ggplot(gdp.pca.S.scores, aes(PC1, PC3, colour=continent)) 
+plt <- plt + geom_point()
+plt <- plt + geom_text(aes(label=country), size=2) 
+plt <- plt + ggtitle('GDP PCA', subtitle='PC1 vs PC3')
+plt <- plt + theme(
+  plot.title = element_text(hjust = 0.5),
+  plot.subtitle = element_text(hjust = 0.5)
+)
+plt <- plt + xlab(paste('PC1 (', round(variance.S[1]*100, 2), '%)', sep=''))
+plt <- plt + ylab(paste('PC3 (', round(variance.S[3]*100, 2), '%)', sep=''))
+print(plt)
+```
+
+```{r}
+plt <- ggplot(gdp.pca.S.scores, aes(PC2, PC3, colour=continent)) 
+plt <- plt + geom_point()
+plt <- plt + geom_text(aes(label=country), size=2) 
+plt <- plt + ggtitle('GDP PCA', subtitle='PC2 vs PC3')
+plt <- plt + theme(
+  plot.title = element_text(hjust = 0.5),
+  plot.subtitle = element_text(hjust = 0.5)
+)
+plt <- plt + xlab(paste('PC2 (', round(variance.S[2]*100, 2), '%)', sep=''))
+plt <- plt + ylab(paste('PC3 (', round(variance.S[3]*100, 2), '%)', sep=''))
+print(plt)
+```
+
+As we can see from the plots, the first two principal component could be used to separate the countries based on their continent. e.g. African countries are mostly on the right side of the plot, while European and Oceania countries are mostly on the left side of the plot. 
+
+The same result can be shown in the plot of PC1-PC3. However, the plot of PC2-PC3 shows that there is no clear separation between the countries based on their continent.
+
+Between these countries, Kuwait behaves differently from the other countries. It is located far from other countries with low PC1 and high PC2 and PC3. This is because Kuwait has a very high GDP compared to other countries.
+
+#### 5.1.2. Life Expectancy
+```{r}
+lifeExp.pca.S <- prcomp(lifeExp, scale=FALSE)
+lifeExp.pca.S.scores <- lifeExp.pca.S$x
+summary(lifeExp.pca.S)
+```
+```{r}
+cum.variance.S <- summary(lifeExp.pca.S)$importance[3,]
+variance.S <- summary(lifeExp.pca.S)$importance[2,]
+plot(cum.variance.S, type='l', xlab='Number of Principal Components', ylab='Cumulative Variance', main='Cumulative Variance of Life Expectancy')
+```
+
+**Plotting PCA scores**
+
+```{r}
+plot(lifeExp.pca.S, main='PCA Scores of Life Expectancy')
+```
+
+According to the plot above, the first three principal components explain 99.2% of the variance in the data. Therefore, we will use the first three principal components for the analysis.
+
+```{r}
+lifeExp.pca.S.scores <- data.frame(lifeExp.pca.S.scores)
+lifeExp.pca.S.scores$country <- rownames(lifeExp.pca.S.scores)
+lifeExp.pca.S.scores$continent <- gap$continent
+```    
+
+```{r}
+plt <- ggplot(lifeExp.pca.S.scores, aes(PC1, PC2, colour=continent)) 
+plt <- plt + geom_point()
+plt <- plt + geom_text(aes(label=country), size=2) 
+plt <- plt + ggtitle('Life Expectancy PCA', subtitle='PC1 vs PC2')
+plt <- plt + theme(
+  plot.title = element_text(hjust = 0.5),
+  plot.subtitle = element_text(hjust = 0.5)
+)
+plt <- plt + xlab(paste('PC1 (', round(variance.S[1]*100, 2), '%)', sep=''))
+plt <- plt + ylab(paste('PC2 (', round(variance.S[2]*100, 2), '%)', sep=''))
+print(plt)
+```
+
+```{r}
+plt <- ggplot(lifeExp.pca.S.scores, aes(PC1, PC3, colour=continent)) 
+plt <- plt + geom_point()
+plt <- plt + geom_text(aes(label=country), size=2) 
+plt <- plt + ggtitle('Life Expectancy PCA', subtitle='PC1 vs PC3')
+plt <- plt + theme(
+  plot.title = element_text(hjust = 0.5),
+  plot.subtitle = element_text(hjust = 0.5)
+)
+plt <- plt + xlab(paste('PC1 (', round(variance.S[1]*100, 2), '%)', sep=''))
+plt <- plt + ylab(paste('PC3 (', round(variance.S[3]*100, 2), '%)', sep=''))
+print(plt)
+```
+
+```{r}
+plt <- ggplot(lifeExp.pca.S.scores, aes(PC2, PC3, colour=continent)) 
+plt <- plt + geom_point()
+plt <- plt + geom_text(aes(label=country), size=2) 
+plt <- plt + ggtitle('Life Expectancy PCA', subtitle='PC2 vs PC3')
+plt <- plt + theme(
+  plot.title = element_text(hjust = 0.5),
+  plot.subtitle = element_text(hjust = 0.5)
+)
+plt <- plt + xlab(paste('PC2 (', round(variance.S[2]*100, 2), '%)', sep=''))
+plt <- plt + ylab(paste('PC3 (', round(variance.S[3]*100, 2), '%)', sep=''))
+print(plt)
+```
+
+As we can see from the plots, the first two principal component could be used to separate the countries based on their continent. e.g. African countries are mostly on the left side of the plot, while European and Oceania countries are mostly on the right side of the plot. 
+
+The same result can be shown in the plot of PC1-PC3. However, the plot of PC2-PC3 shows that there is no clear separation between the countries based on their continent.
+
+Between these countries, Zimbabwe, and Zambia behave differently from the other countries. They are located far from other countries with low high PC2 and PC3. This is because these countries have a very low life expectancy compared to other countries.
+
+
+### 5.2. Multidimensional Scaling (MDS)
+Performing MDS on the combined dataset of GDP and Life Expectancy.
+
+```{r}
+combined.ds <- gap[,3:26]
+n <- nrow(combined.ds)
+H <- diag(rep(1,n))-rep(1,n)%*%t(rep(1,n))/n
+combined.ds <- H %*% as.matrix(combined.ds)
+```
+  
+```{r}
+distances <- dist(combined.ds)
+mds <- cmdscale(distances, k=2)
+```
+Now we will plot a 2-dimensional representation of the data.
+
+```{r}
+mds <- data.frame(mds)
+mds$country <- gap$country
+mds$continent <- gap$continent
+plt <- ggplot(mds, aes(X1, X2, colour=continent))
+plt <- plt + geom_point()
+plt <- plt + geom_text(aes(label=country), size=2) 
+plt <- plt + ggtitle('Multidimensional scaling')
+plt <- plt + theme(
+  plot.title = element_text(hjust = 0.5),
+  plot.subtitle = element_text(hjust = 0.5)
+)
+plt <- plt + xlab('V1')
+plt <- plt + ylab('V2')
+print(plt)
+```
+
+The plot above shows that the countries are separated based on their continent. e.g. African countries are mostly on the left side of the plot, while European and Oceania countries are mostly on the right side of the plot same as what we saw in the PCA plot of life expectancy.
+
+### 5.3. Hypothesis Testing
+Now we will conduct a multivariate hypothesis test for year 2007 and 1952 for Asian and European countries. The null hypothesis is that the mean of the GDP/life expectancy of the countries in each mentioned continent is the same. The alternative hypothesis is that the mean of the GDP/life expectancy of the countries in the continent is different.
+
+```{r}
+gdp.2007 <- gdp %>% dplyr::select('2007')
+lifeExp.2007 <- lifeExp %>% dplyr::select('2007')
+gdp.2007$continent <- gap$continent
+lifeExp.2007$continent <- gap$continent
+
+gdp.2007.asia <- data.frame(gdp.2007[gdp.2007$continent == 'Asia',1])
+lifeExp.2007.asia <- data.frame(lifeExp.2007[lifeExp.2007$continent == 'Asia',1])
+gdp.2007.europe <- data.frame(gdp.2007[gdp.2007$continent == 'Europe',1])
+lifeExp.2007.europe <- data.frame(lifeExp.2007[lifeExp.2007$continent == 'Europe',1])
+```
+```{r}
+gdp.1952 <- gdp %>% dplyr::select('1952')
+lifeExp.1952 <- lifeExp %>% dplyr::select('1952')
+gdp.1952$continent <- gap$continent
+lifeExp.1952$continent <- gap$continent
+
+gdp.1952.asia <- data.frame(gdp.1952[gdp.1952$continent == 'Asia',1])
+lifeExp.1952.asia <- data.frame(lifeExp.1952[lifeExp.1952$continent == 'Asia',1])
+gdp.1952.europe <- data.frame(gdp.1952[gdp.1952$continent == 'Europe',1])
+lifeExp.1952.europe <- data.frame(lifeExp.1952[lifeExp.1952$continent == 'Europe',1])
+```
+#### 5.3.1. GDP
+```{r}
+HotellingsT2(gdp.2007.asia, gdp.2007.europe)
+qf(0.95, 1, 61)
+```
+The Hotelling's T2 test statistic is 25.215 and the F-statistic is 3.99. so we reject the null hypothesis. This means that the mean of the GDP of the countries in Asia and Europe in 2007 is different.
+
+Let's compare these two continents in 1952.
+
+```{r}
+HotellingsT2(gdp.1952.asia, gdp.1952.europe)
+qf(0.95, 1, 61)
+```
+The Hotelling's T2 test statistic is 24 and the F-statistic is 3.99. so we reject the null hypothesis. This means that the mean of the GDP of the countries in Asia and Europe in 1952 is different. Although they are more similar in 1952 than 2007.
+
+#### 5.3.2. Life Expectancy
+```{r}
+HotellingsT2(lifeExp.2007.asia, lifeExp.2007.europe)
+qf(0.95, 1, 61)
+```
+The Hotelling's T2 test statistic is 20 and the F-statistic is 3.99. so we reject the null hypothesis. This means that the mean of the Life Expectancy of the countries in Asia and Europe in 2007 is different.
+
+Let's compare these two continents in 1952.
+
+```{r}
+HotellingsT2(lifeExp.1952.asia, lifeExp.1952.europe)
+qf(0.95, 1, 61)
+```
+The Hotelling's T2 test statistic is 79.73 and the F-statistic is 3.99. so we reject the null hypothesis. This means that the mean of the Life Expectancy of the countries in Asia and Europe in 1952 is different. Although they are more similar in 2007 than 1952 which is the opposite of what we saw in the GDP test.
+
+### 5.4. Linear Discriminant Analysis (LDA)
+We will now look at whether linear discriminant analysis can be used to successfully separate the continents. We will use lda to predict the continent of a country based on its GDP and life expectancy.
+
+```{r}
+set.seed(1221)
+# combine gdp and life expectancy
+combined.ds <- gap[,3:26]
+n <- nrow(combined.ds)
+test_index <- sample(1:n, 0.2*n)
+train <- combined.ds[-test_index,]
+test <- combined.ds[test_index,]
+```
+```{r}
+lda.model.train <- lda(train, gap$continent[-test_index])
+lda.model.test <- predict(lda.model.train, test)
+
+print(paste('LDA accuracy:', sum(lda.model.test$class == gap$continent[test_index])/length(lda.model.test$class)*100, '%', sep=''))
+table(lda.model.test$class, gap$continent[test_index])
+```
+```{r}
+proj <- predict(lda.model.train, type="proba")$x[, 1:2]
+proj.df <- data.frame(proj, continent = gap$continent[-test_index])
+ggplot(proj.df, aes(x = LD1, y = LD2, color = continent)) + 
+  geom_point() +
+  labs(x = "LD1", y = "LD2", color = "Continent")
+
+proj <- predict(lda.model.train, test, type="proba")$x[, 1:2]
+proj.df <- data.frame(proj, continent = gap$continent[test_index])
+ggplot(proj.df, aes(x = LD1, y = LD2, color = continent)) + 
+  geom_point() +
+  labs(x = "LD1", y = "LD2", color = "Continent")
+```
+
+As it can be seen from the plots above, the LDA model is able to separate the continents based on the GDP and life expectancy of the countries. The plots are somehow similar to the PCA plots we saw earlier. But it seems Life Expectancy is more important than GDP in separating the continents in this case.
+
+### 5.5. Clustering
+#### 5.5.1. K-Means
+We will now use K-Means clustering to cluster the countries based on their GDP and life expectancy.
+
+##### 5.5.1.1. GDP
+```{r}
+set.seed(1221)
+gdp.kmeans <- kmeans(gdp, centers = 3)
+table(gdp.kmeans$cluster, gap$continent)
+```
+```{r}
+fviz_cluster(gdp.kmeans, data = gdp, ellipse.type = "norm", 
+             palette = "jco", ggtheme = theme_minimal())
+
+fviz_nbclust(gdp, kmeans, method = "wss")
+```
+
+##### 5.5.1.2. Life Expectancy
+```{r}
+set.seed(1221)
+lifeExp.kmeans <- kmeans(lifeExp, centers = 3)
+table(lifeExp.kmeans$cluster, gap$continent)
+```
+```{r}
+fviz_cluster(lifeExp.kmeans, data = lifeExp, ellipse.type = "norm", 
+             palette = "jco", ggtheme = theme_minimal())
+
+fviz_nbclust(lifeExp, kmeans, method = "wss")
+```
+
+As we can see, we use the elbow method to find the optimal number of clusters. For GDP, the optimal number of clusters is 3 and for life expectancy, it is also 3. The clusters are not very similar to the continents. 
+
+#### 5.5.2. Hierarchical Clustering
+```{r}
+gap.scaled <- gap
+gap.scaled[,3:26] <- scale(gap[,3:26]) 
+gap.dist <- dist(gap.scaled[,3:26], method = "euclidean")
+plot(hclust(gap.dist, method = "complete"), hang = -1, cex = 0.6, main = "Complete Linkage Clustering", labels = gap$country)
+plot(hclust(gap.dist, method = "single"), hang = -1, cex = 0.6, main = "Single Linkage Clustering", labels = gap$country)
+plot(hclust(gap.dist, method = "average"), hang = -1, cex = 0.6, main = "Average Linkage Clustering", labels = gap$country)
+```
+
+Plots above show the hierarchical clustering of the countries based on their GDP and life expectancy. The complete linkage clustering seems to be the best one. The clusters are not very similar to the continents.
+
+### 5.6. Linear Regression
+We will now use linear regression to predict 2007 life expectancy from gdp values.
+
+```{r}
+lifeExp.2007 <- lifeExp %>% dplyr::select('2007')
+df <- cbind(gdp, lifeExp.2007)
+colnames(df)[ncol(df)] <- 'target'
+```
+```{r}
+set.seed(1221)
+n <- nrow(df)
+test_index <- sample(1:n, 0.2*n)
+train <- df[-test_index,]
+test <- df[test_index,]
+```
+```{r}
+model.lm <- lm(target ~ ., data = train)
+summary(model.lm)
+```
+```{r}
+pred <- predict(model.lm, test)
+print(paste('RMSE:', sqrt(mean((pred - test$target)^2))))
+```
+
+The RMSE is 6.4 for the test set for linear regression model.
+
+Let's try Ridge regression to see if we can improve the RMSE.
+
+```{r}
+train.matrix <- as.matrix(train[,-ncol(train)])
+test.matrix <- as.matrix(test[,-ncol(test)])
+train.target <- train$target
+test.target <- test$target
+```
+```{r}
+model.ridge <- glmnet(train.matrix, train.target, alpha = 0)
+plot(model.ridge, xvar = "lambda", label = FALSE)
+```
+```{r}
+lambdas <- 10^seq(3,-2,by=-0.1)
+model.ridge.cv <- cv.glmnet(train.matrix, train.target, alpha = 0, lambda = lambdas)
+plot(model.ridge.cv)
+```
+```{r}
+min.lambda <- model.ridge.cv$lambda.min
+min.1se.lambda <- model.ridge.cv$lambda.1se
+print(paste('Min lambda:', min.lambda))
+print(paste('Min 1se lambda:', min.1se.lambda))
+```
+```{r}
+coef <- coef(model.ridge.cv, s = model.ridge.cv$lambda.min)
+print(paste('Number of coefficients:', length(coef[coef != 0])))
+```
+```{r}
+pred <- predict(model.ridge.cv, test.matrix, s = model.ridge.cv$lambda.min)
+print(paste('RMSE:', sqrt(mean((pred - test.target)^2))))
+```
+
+The RMSE is 6.34 for the test set for Ridge regression model. It is a bit better than the linear regression model. The number of coefficients is 13 which is the same as the number of features. This means that the Ridge regression model is not able to reduce the number of features. Let's try Lasso regression to see if we can improve the RMSE.
+
+```{r}
+model.lasso <- glmnet(train.matrix, train.target, alpha = 1)
+plot(model.lasso, xvar = "lambda", label = FALSE)
+```
+```{r}
+lambdas <- 10^seq(3,-2,by=-0.1)
+model.lasso.cv <- cv.glmnet(train.matrix, train.target, alpha = 1, lambda = lambdas)
+plot(model.lasso.cv)
+```
+```{r}
+min.lambda <- model.lasso.cv$lambda.min
+min.1se.lambda <- model.lasso.cv$lambda.1se
+print(paste('Min lambda:', min.lambda))
+print(paste('Min 1se lambda:', min.1se.lambda))
+```
+```{r}
+coef <- coef(model.lasso.cv, s = model.lasso.cv$lambda.min)
+print(paste('Number of coefficients:', length(coef[coef != 0])))
+```
+```{r}
+pred <- predict(model.lasso.cv, test.matrix, s = model.lasso.cv$lambda.min)
+print(paste('RMSE:', sqrt(mean((pred - test.target)^2))))
+```
+
+The RMSE is 6.27 for the test set for Lasso regression model. It is better than the other models. The number of coefficients is 3 which is much less than the number of features. This means that the Lasso regression model is able to reduce the number of features. 
+
+### 5.7. Conclusion
+In this project, we have analyzed the Gapminder dataset. We have found that the life expectancy has increased over the years. We have also found that the GDP has increased over the years. We have found that the life expectancy is correlated with the GDP. We have also found that the life expectancy is correlated with the GDP per capita.
+
+Good Luck!
